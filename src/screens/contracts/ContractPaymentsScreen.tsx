@@ -1,11 +1,11 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
 
-const payments = [
+const INITIAL_PAYMENTS = [
   { id: '1', month: 'April 2026', amount: '$4,200', date: 'Apr 1, 2026', status: 'paid' },
   { id: '2', month: 'March 2026', amount: '$4,200', date: 'Mar 1, 2026', status: 'paid' },
   { id: '3', month: 'February 2026', amount: '$4,200', date: 'Feb 1, 2026', status: 'paid' },
@@ -18,11 +18,35 @@ export default function ContractPaymentsScreen() {
   const { t } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
+  const [isTerminated, setIsTerminated] = useState(false);
+  const [paymentList, setPaymentList] = useState(INITIAL_PAYMENTS);
+
   const statusConfig = {
     paid: { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer, label: t('contractPayments.paid') },
     upcoming: { bg: Colors.tertiaryFixed, text: Colors.onTertiaryFixed, label: t('contractPayments.upcoming') },
     overdue: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('contractPayments.overdue') },
+    voided: { bg: Colors.surfaceContainerLow, text: Colors.onSurfaceVariant, label: t('contractPayments.voided') },
   };
+
+  function handleTerminate() {
+    Alert.alert(
+      t('contractPayments.terminateTitle'),
+      t('contractPayments.terminateMessage'),
+      [
+        { text: t('contractPayments.terminateCancel'), style: 'cancel' },
+        {
+          text: t('contractPayments.terminateConfirm'),
+          style: 'destructive',
+          onPress: () => {
+            setIsTerminated(true);
+            setPaymentList(prev =>
+              prev.map(p => p.status === 'upcoming' || p.status === 'overdue' ? { ...p, status: 'voided' } : p)
+            );
+          },
+        },
+      ]
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -56,9 +80,19 @@ export default function ContractPaymentsScreen() {
           </View>
         </View>
 
+        {isTerminated ? (
+          <View style={styles.terminatedBanner}>
+            <Text style={styles.terminatedBannerText}>{t('contractPayments.terminatedBanner')}</Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.terminateButton} onPress={handleTerminate} activeOpacity={0.8}>
+            <Text style={styles.terminateButtonText}>{t('contractPayments.terminateButton')}</Text>
+          </TouchableOpacity>
+        )}
+
         <Text style={styles.sectionTitle}>{t('contractPayments.paymentHistory')}</Text>
 
-        {payments.map((p) => {
+        {paymentList.map((p) => {
           const status = statusConfig[p.status as keyof typeof statusConfig];
           return (
             <View key={p.id} style={styles.paymentCard}>
@@ -123,5 +157,30 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     paymentAmount: { ...Typography.titleSm, fontFamily: FontFamily.manropeBold, color: C.onSurface },
     badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: BorderRadius.sm },
     badgeText: { ...Typography.labelSm, letterSpacing: 0.5 },
+    terminateButton: {
+      backgroundColor: C.errorContainer,
+      borderRadius: BorderRadius.xl,
+      paddingVertical: Spacing.md,
+      alignItems: 'center',
+    },
+    terminateButtonText: {
+      ...Typography.labelSm,
+      fontFamily: FontFamily.interSemiBold,
+      color: C.onErrorContainer,
+      letterSpacing: 0.8,
+    },
+    terminatedBanner: {
+      backgroundColor: C.errorContainer,
+      borderRadius: BorderRadius.xl,
+      paddingVertical: Spacing.md,
+      alignItems: 'center',
+      opacity: 0.7,
+    },
+    terminatedBannerText: {
+      ...Typography.labelSm,
+      fontFamily: FontFamily.interSemiBold,
+      color: C.onErrorContainer,
+      letterSpacing: 0.8,
+    },
   });
 }

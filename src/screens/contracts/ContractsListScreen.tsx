@@ -25,6 +25,7 @@ export default function ContractsListScreen() {
     active: { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer, label: t('contracts.active') },
     expiring: { bg: Colors.tertiaryFixed, text: Colors.onTertiaryFixed, label: t('contracts.expiring') },
     expired: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('contracts.expired') },
+    terminated: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('contracts.terminated') },
   };
 
   return (

@@ -92,6 +92,7 @@ const en = {
   'contracts.active': 'ACTIVE',
   'contracts.expiring': 'EXPIRING SOON',
   'contracts.expired': 'EXPIRED',
+  'contracts.terminated': 'TERMINATED',
 
   // ── Contract Payments ─────────────────────────────────────────────────────
   'contractPayments.headerTitle': 'Contract & Payments',
@@ -102,6 +103,13 @@ const en = {
   'contractPayments.paid': 'PAID',
   'contractPayments.upcoming': 'UPCOMING',
   'contractPayments.overdue': 'OVERDUE',
+  'contractPayments.voided': 'VOIDED',
+  'contractPayments.terminateButton': 'Terminate Contract',
+  'contractPayments.terminateTitle': 'Terminate Contract',
+  'contractPayments.terminateMessage': 'This will void all upcoming payments and mark the contract as terminated. This action cannot be undone.',
+  'contractPayments.terminateConfirm': 'Terminate',
+  'contractPayments.terminateCancel': 'Cancel',
+  'contractPayments.terminatedBanner': 'CONTRACT TERMINATED',
 
   // ── Create Contract ───────────────────────────────────────────────────────
   'createContract.headerTitle': 'New Contract',
@@ -238,6 +246,7 @@ const ar: typeof en = {
   'contracts.active': 'نشط',
   'contracts.expiring': 'ينتهي قريباً',
   'contracts.expired': 'منتهي',
+  'contracts.terminated': 'منتهي مبكراً',
 
   // ── Contract Payments ─────────────────────────────────────────────────────
   'contractPayments.headerTitle': 'العقد والمدفوعات',
@@ -248,6 +257,13 @@ const ar: typeof en = {
   'contractPayments.paid': 'مدفوع',
   'contractPayments.upcoming': 'قادم',
   'contractPayments.overdue': 'متأخر',
+  'contractPayments.voided': 'ملغي',
+  'contractPayments.terminateButton': 'إنهاء العقد مبكراً',
+  'contractPayments.terminateTitle': 'إنهاء العقد',
+  'contractPayments.terminateMessage': 'سيؤدي هذا إلى إلغاء جميع المدفوعات القادمة وتعليم العقد كمنتهٍ. لا يمكن التراجع عن هذا الإجراء.',
+  'contractPayments.terminateConfirm': 'إنهاء',
+  'contractPayments.terminateCancel': 'إلغاء',
+  'contractPayments.terminatedBanner': 'تم إنهاء العقد مبكراً',
 
   // ── Create Contract ───────────────────────────────────────────────────────
   'createContract.headerTitle': 'عقد جديد',

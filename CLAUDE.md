@@ -46,6 +46,18 @@ Tapping the `SC` avatar in the Dashboard header opens a modal dropdown with:
 - **Dark Mode** — toggle pill (ON/OFF)
 - **Logout** — navigates back to Auth stack via `navigation.reset`
 
+#### Contracts — Early Termination
+The `ContractPaymentsScreen` supports early termination of an active contract:
+- A **"Terminate Contract"** button (styled `errorContainer`) sits between the summary card and the payment history list.
+- Tapping it shows a confirmation `Alert` with destructive confirm.
+- On confirm: `isTerminated` state flips to `true`; all `upcoming` and `overdue` payments in the local list are set to `'voided'`.
+- The button is replaced by a greyed-out **"CONTRACT TERMINATED"** banner.
+- Voided payments render with a muted grey badge (`surfaceContainerLow` / `onSurfaceVariant`).
+- `ContractsListScreen` `statusConfig` includes a `terminated` key (same error colours as `expired`, distinct label).
+
+Contract status enum: `'active' | 'expiring' | 'expired' | 'terminated'`
+Payment status enum: `'paid' | 'upcoming' | 'overdue' | 'voided'`
+
 #### Dashboard Active Rentals List
 Only contracts with `contractStatus === 'active'` are shown. Each card has two sections:
 
