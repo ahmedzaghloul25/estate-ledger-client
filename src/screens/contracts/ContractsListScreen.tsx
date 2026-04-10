@@ -1,19 +1,18 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ContractsStackParamList } from '../../navigation';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
+import { getContracts, type ApiContract } from '../../services/api';
 
 type NavProp = NativeStackNavigationProp<ContractsStackParamList>;
 
-const contracts = [
-  { id: '1', tenant: 'Julianne Sterling', property: 'The Meridian Penthouse', start: 'Jan 1, 2026', end: 'Dec 31, 2026', rent: '$4,200', status: 'active' },
-  { id: '2', tenant: 'Marcus Thorne', property: 'Cascade Lofts #4B', start: 'Mar 1, 2026', end: 'Feb 28, 2027', rent: '$2,850', status: 'active' },
-  { id: '3', tenant: 'Elena Vasquez', property: 'Harborview Suite', start: 'Jun 1, 2025', end: 'May 31, 2026', rent: '$3,600', status: 'expiring' },
-];
+function formatDate(isoStr: string): string {
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export default function ContractsListScreen() {
   const navigation = useNavigation<NavProp>();
@@ -21,12 +20,25 @@ export default function ContractsListScreen() {
   const { t } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
-  const statusConfig = {
+  const [contracts, setContracts] = useState<ApiContract[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      getContracts()
+        .then(setContracts)
+        .catch(() => Alert.alert('Error', 'Failed to load contracts'))
+        .finally(() => setLoading(false));
+    }, [])
+  );
+
+  const statusConfig = useMemo<Record<string, { bg: string; text: string; label: string }>>(() => ({
     active: { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer, label: t('contracts.active') },
     expiring: { bg: Colors.tertiaryFixed, text: Colors.onTertiaryFixed, label: t('contracts.expiring') },
     expired: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('contracts.expired') },
     terminated: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('contracts.terminated') },
-  };
+  }), [Colors, t]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -43,31 +55,40 @@ export default function ContractsListScreen() {
           <Text style={styles.newButtonText}>{t('contracts.newButton')}</Text>
         </TouchableOpacity>
       </View>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {contracts.map((c) => {
-          const status = statusConfig[c.status as keyof typeof statusConfig];
-          return (
-            <TouchableOpacity
-              key={c.id}
-              style={styles.card}
-              onPress={() => navigation.navigate('ContractPayments', { contractId: c.id })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.cardTop}>
-                <Text style={styles.tenant}>{c.tenant}</Text>
-                <View style={[styles.badge, { backgroundColor: status.bg }]}>
-                  <Text style={[styles.badgeText, { color: status.text }]}>{status.label}</Text>
+
+      {loading ? (
+        <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
+      ) : (
+        <FlatList
+          data={contracts}
+          keyExtractor={(c) => c._id}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item: c }) => {
+            const status = statusConfig[c.status] ?? statusConfig['expired'];
+            return (
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => navigation.navigate('ContractPayments', { contractId: c._id })}
+                activeOpacity={0.7}
+              >
+                <View style={styles.cardTop}>
+                  <Text style={styles.tenant}>{c.tenantId.fullName}</Text>
+                  <View style={[styles.badge, { backgroundColor: status.bg }]}>
+                    <Text style={[styles.badgeText, { color: status.text }]}>{status.label}</Text>
+                  </View>
                 </View>
-              </View>
-              <Text style={styles.property}>{c.property}</Text>
-              <View style={styles.cardFooter}>
-                <Text style={styles.dates}>{c.start} – {c.end}</Text>
-                <Text style={styles.rent}>{c.rent}/mo</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+                <Text style={styles.property}>{c.propertyId.name}</Text>
+                <Text style={styles.property}>{c.propertyId.address}</Text>
+                <View style={styles.cardFooter}>
+                  <Text style={styles.dates}>{formatDate(c.startDate)} – {formatDate(c.endDate)}</Text>
+                  <Text style={styles.rent}>EGP {c.rent.toLocaleString()}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }

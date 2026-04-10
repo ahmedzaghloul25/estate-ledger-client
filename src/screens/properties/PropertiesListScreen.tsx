@@ -1,21 +1,14 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PropertiesStackParamList } from '../../navigation';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
+import { getProperties, deleteProperty, type ApiProperty } from '../../services/api';
 
 type NavProp = NativeStackNavigationProp<PropertiesStackParamList>;
-
-const properties = [
-  { id: '1', name: 'The Meridian Penthouse', address: '12 Skyline Ave, Floor 32', status: 'rented', rent: '$4,200/mo', bedrooms: 3 },
-  { id: '2', name: 'Cascade Lofts #4B', address: '88 Harbor St, Unit 4B', status: 'rented', rent: '$2,850/mo', bedrooms: 2 },
-  { id: '3', name: 'Harborview Suite', address: '5 Marina Blvd, Suite 1A', status: 'overdue', rent: '$3,600/mo', bedrooms: 2 },
-  { id: '4', name: 'The Westwood Studio', address: '200 Elm Court, Apt 7', status: 'available', rent: '$1,900/mo', bedrooms: 1 },
-  { id: '5', name: 'Ridgemont Townhouse', address: '44 Oak Lane', status: 'available', rent: '$3,200/mo', bedrooms: 4 },
-];
 
 export default function PropertiesListScreen() {
   const navigation = useNavigation<NavProp>();
@@ -23,11 +16,46 @@ export default function PropertiesListScreen() {
   const { t } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
-  const statusConfig = {
+  const [properties, setProperties] = useState<ApiProperty[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadProperties = useCallback(() => {
+    setLoading(true);
+    getProperties()
+      .then(setProperties)
+      .catch(() => Alert.alert('Error', 'Failed to load properties'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadProperties(); }, [loadProperties]));
+
+  const handleLongPress = useCallback((id: string) => {
+    Alert.alert(
+      t('properties.deleteTitle'),
+      t('properties.deleteMessage'),
+      [
+        { text: t('properties.deleteCancel'), style: 'cancel' },
+        {
+          text: t('properties.deleteConfirm'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProperty(id);
+              loadProperties();
+            } catch (e) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Failed to delete property');
+            }
+          },
+        },
+      ]
+    );
+  }, [t, loadProperties]);
+
+  const statusConfig = useMemo<Record<string, { bg: string; text: string; label: string }>>(() => ({
     rented: { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer, label: t('properties.rented') },
     available: { bg: Colors.primaryFixed, text: Colors.primary, label: t('properties.available') },
     overdue: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('properties.overdue') },
-  };
+  }), [Colors, t]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -44,38 +72,46 @@ export default function PropertiesListScreen() {
           <Text style={styles.addButtonText}>{t('properties.newButton')}</Text>
         </TouchableOpacity>
       </View>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {properties.map((p) => {
-          const status = statusConfig[p.status as keyof typeof statusConfig];
-          return (
-            <TouchableOpacity
-              key={p.id}
-              style={styles.card}
-              onPress={() => navigation.navigate('PropertyDetail', { propertyId: p.id })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.cardImagePlaceholder}>
-                <Text style={{ fontSize: 28 }}>🏠</Text>
-              </View>
-              <View style={styles.cardBody}>
-                <View style={styles.cardTop}>
-                  <Text style={styles.cardName}>{p.name}</Text>
-                  <View style={[styles.badge, { backgroundColor: status.bg }]}>
-                    <Text style={[styles.badgeText, { color: status.text }]}>{status.label}</Text>
+
+      {loading ? (
+        <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
+      ) : (
+        <FlatList
+          data={properties}
+          keyExtractor={(p) => p._id}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item: p }) => {
+            const status = statusConfig[p.status] ?? statusConfig['available'];
+            return (
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => navigation.navigate('PropertyDetail', { propertyId: p._id })}
+                onLongPress={() => handleLongPress(p._id)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.cardImagePlaceholder}>
+                  <Text style={{ fontSize: 35 }}>🏠</Text>
+                </View>
+                <View style={styles.cardBody}>
+                  <View style={styles.cardTop}>
+                    <Text style={styles.cardName}>{p.name}</Text>
+                    <View style={[styles.badge, { backgroundColor: status.bg }]}>
+                      <Text style={[styles.badgeText, { color: status.text }]}>{status.label}</Text>
+                    </View>
                   </View>
+                  <Text style={styles.cardAddress}>{p.address}</Text>
+                  {p.area !== undefined && (
+                    <View style={styles.cardFooter}>
+                      <Text style={styles.cardRent}>{p.area} m²</Text>
+                    </View>
+                  )}
                 </View>
-                <Text style={styles.cardAddress}>{p.address}</Text>
-                <View style={styles.cardFooter}>
-                  <Text style={styles.cardRent}>{p.rent}</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -124,7 +160,7 @@ function makeStyles(C: ReturnType<typeof useColors>) {
       overflow: 'hidden',
     },
     cardImagePlaceholder: {
-      height: 140,
+      height: 80,
       backgroundColor: C.surfaceContainerLow,
       alignItems: 'center',
       justifyContent: 'center',

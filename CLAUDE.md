@@ -38,7 +38,7 @@ Navigation is fully typed with TypeScript param lists (`RootStackParamList`, `Ma
 
 ### Screens (`src/screens/`)
 
-Organized by domain: `auth/`, `dashboard/`, `properties/`, `tenants/`, `contracts/`, `reports/`. All screens use mock/static data inline — there is no API layer or state management library yet.
+Organized by domain: `auth/`, `dashboard/`, `properties/`, `tenants/`, `contracts/`, `reports/`. All screens fetch live data from the deployed API via `src/services/api.ts`. State is managed through React Context (`AppContext`).
 
 #### Dashboard Avatar Menu
 Tapping the `SC` avatar in the Dashboard header opens a modal dropdown with:
@@ -71,6 +71,34 @@ Only contracts with `contractStatus === 'active'` are shown. Each card has two s
 - Due date label + value (left), pay status badge, rent amount (right)
 
 Date parsing is handled by `parseContractDate(dateStr)` and `isExpiringSoon(contractEnd)` — module-level helpers in `DashboardScreen.tsx` that parse the `"DD MMM YYYY"` format used in the mock data.
+
+#### Properties & Tenants — Long-Press Delete
+Both `PropertiesListScreen` and `TenantsListScreen` support deletion via long-press on a card. A confirmation `Alert` is shown; on confirm the corresponding API endpoint (`DELETE /properties/:id` or `DELETE /tenants/:id`) is called and the list is refreshed.
+
+### API Layer (`src/services/api.ts`)
+
+Centralised API service for all server communication.
+
+- **Base URL:** `https://estate-ledger-server.onrender.com/api/v1` (hardcoded — see Known Issues)
+- **Token management:** In-memory `_token` variable with `setToken()` / `getToken()` accessors. The token is set on login and cleared on logout.
+- **`apiFetch<T>(path, options)`** — Base fetch wrapper that adds `Content-Type: application/json` and `Authorization: Bearer <token>` headers, parses the JSON response, and throws on non-2xx status codes.
+- **`buildQuery(params)`** — Builds URL query strings from a params object, filtering out undefined/empty values.
+- **`derivePaymentStatus(p)`** — Maps API payment fields (`isVoided`, `paidDate`, `dueDate`) to UI status enum: `'paid' | 'overdue' | 'upcoming' | 'voided'`.
+
+**Endpoint groups:**
+
+| Group | Functions |
+|---|---|
+| Auth | `loginApi` |
+| Properties | `getProperties`, `getPropertyById`, `createProperty`, `deleteProperty` |
+| Tenants | `getTenants`, `createTenant`, `deleteTenant` |
+| Contracts | `getContracts`, `getContractById`, `createContract`, `terminateContract` |
+| Payments | `getPayments`, `collectPayment` |
+| Reports | `getReportSummary`, `getReportMonthly`, `getReportBreakdown` |
+
+### Constants (`src/data/index.ts`)
+
+Exports `PAYMENT_INTERVAL_OPTIONS` — the list of payment interval choices (`Monthly`, `Quarterly`, `Semi-Annually`, `Annually`) used by `CreateContractScreen`.
 
 ### Theme (`src/theme/`)
 
@@ -114,6 +142,10 @@ A single `AppProvider` (in `App.tsx`) exposes:
 | `setLanguage` | `(lang) => void` | Switch locale + trigger `I18nManager.forceRTL` |
 | `isRTL` | `boolean` | Convenience alias for `language === 'ar'` |
 | `t` | `(key: TranslationKey) => string` | Translate a string key |
+| `token` | `string \| null` | Current auth JWT |
+| `user` | `{ name, email } \| null` | Logged-in user info |
+| `login` | `(email, password) => Promise<void>` | Authenticate and store token |
+| `logout` | `() => void` | Clear token and user state |
 
 Consume via:
 ```ts
@@ -137,5 +169,21 @@ Both `en` and `ar` dictionaries must stay in sync for every key. The `ar` object
 | `react-native 0.81` | Core framework (New Architecture enabled) |
 | `@react-navigation/native-stack` + `bottom-tabs` | Navigation |
 | `@expo-google-fonts/manrope` + `inter` | Typography |
-| React Context API (built-in) | Global state — theme + locale, no external library needed |
+| React Context API (built-in) | Global state — theme + locale + auth |
 | `I18nManager` (RN built-in) | RTL layout flip for Arabic |
+| `fetch` (built-in) | API calls to deployed server (`estate-ledger-server.onrender.com`) |
+
+### Known Issues
+
+#### Security
+- **Hardcoded API URL** — Production URL is hardcoded in `api.ts`; should use environment variables (`EXPO_PUBLIC_API_URL`) for multi-environment builds
+- **In-memory-only token** — Auth token is stored in a module-level variable; lost on app restart and not encrypted. Should use `expo-secure-store` for persistent secure storage
+- **No 401 handling** — Expired tokens cause generic errors; `apiFetch` should detect 401 responses, clear the token, and redirect to login
+- **Silent error swallowing** — Multiple screens use `.catch(() => {})`, hiding errors. Should at minimum log to console
+- **Minimal input validation** — Login only checks non-empty fields (no email format). Create screens lack length limits and numeric validation
+
+#### Performance
+- **No list virtualization** — `PropertiesListScreen`, `TenantsListScreen`, and `ContractsListScreen` use `ScrollView` + `.map()` instead of `FlatList`
+- **Missing `useMemo`** — `statusConfig` objects are recreated every render in 4+ screens; `payStatusConfig` in DashboardScreen and `totalValue` in ContractPaymentsScreen also lack memoization
+- **Large monolithic DashboardScreen** — ~1000 lines handling data fetching, menus, language, dark mode, and cards; should be split into sub-components
+- **No request cancellation** — No `AbortController` usage; unmounted components may attempt state updates after navigation

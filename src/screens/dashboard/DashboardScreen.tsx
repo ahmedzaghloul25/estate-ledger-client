@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,90 +6,145 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainTabParamList, ContractsStackParamList, RootStackParamList } from '../../navigation';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
+import {
+  getReportSummary,
+  getReportBreakdown,
+  getProperties,
+  getPayments,
+  getContracts,
+  collectPayment,
+  type ApiSummary,
+  type ApiBreakdown,
+} from '../../services/api';
 
 type DashboardNavProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Dashboard'>,
   NativeStackNavigationProp<ContractsStackParamList>
 >;
 
-const properties = [
-  {
-    id: '1',
-    name: 'The Meridian Penthouse',
-    tenant: 'Julianne Sterling',
-    rent: '$4,500',
-    contractEnd: '12 OCT 2026',
-    dueDate: '01 Apr 2026',
-    payStatus: 'paid' as const,
-    contractStatus: 'active' as const,
-  },
-  {
-    id: '2',
-    name: 'Verdant Villa No. 8',
-    tenant: 'Markus Chen',
-    rent: '$3,200',
-    contractEnd: '01 Mar 2026',
-    dueDate: '01 Mar 2026',
-    payStatus: 'overdue' as const,
-    contractStatus: 'expired' as const,
-  },
-  {
-    id: '3',
-    name: 'The Heritage Mews',
-    tenant: 'Elena Rodriguez',
-    rent: '$2,850',
-    contractEnd: '15 JAN 2027',
-    dueDate: '19 Apr 2026',
-    payStatus: 'upcoming' as const,
-    contractStatus: 'active' as const,
-  },
-];
-
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-function parseContractDate(dateStr: string): Date {
-  const parts = dateStr.trim().split(' ');
-  const day = parseInt(parts[0], 10);
-  const mon = MONTHS.indexOf(parts[1].toUpperCase());
-  const year = parseInt(parts[2], 10);
-  return new Date(year, mon, day);
+interface ActiveRentalItem {
+  id: string;
+  propertyId: string;
+  name: string;
+  tenant: string;
+  rent: string;
+  contractEndISO: string;
+  contractEnd: string;
+  dueDate: string;
+  payStatus: 'paid' | 'upcoming' | 'overdue';
+  contractStatus: 'active' | 'expiring' | 'expired';
+  paymentId: string | null;
 }
 
-function isExpiringSoon(contractEnd: string): boolean {
-  const end = parseContractDate(contractEnd);
-  const twoMonthsOut = new Date();
-  twoMonthsOut.setMonth(twoMonthsOut.getMonth() + 2);
-  return end <= twoMonthsOut;
+function formatDashboardDate(d: Date): string {
+  const M = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  return `${String(d.getDate()).padStart(2, '0')} ${M[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function isExpiringSoon(isoStr: string): boolean {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() + 2);
+  return new Date(isoStr) <= cutoff;
 }
 
 export default function DashboardScreen() {
   const navigation = useNavigation<DashboardNavProp>();
   const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const Colors = useColors();
-  const { isDarkMode, toggleDarkMode, language, setLanguage, t } = useAppContext();
+  const { isDarkMode, toggleDarkMode, language, setLanguage, t, user, logout } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
+
+  const [summaryData, setSummaryData] = useState<ApiSummary | null>(null);
+  const [breakdown, setBreakdown] = useState<ApiBreakdown | null>(null);
+  const [propertiesCount, setPropertiesCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
+  const [activeRentals, setActiveRentals] = useState<ActiveRentalItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
 
-  const menuProperty = properties.find((p) => p.id === openMenuId);
-  const isPayable =
-    menuProperty?.payStatus === 'overdue' || menuProperty?.payStatus === 'upcoming';
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    const year = new Date().getFullYear();
+    try {
+      const [summary, props, overduePayments, activeContracts, upcomingPayments, bkd] =
+        await Promise.all([
+          getReportSummary(year),
+          getProperties(),
+          getPayments({ status: 'overdue' }),
+          getContracts('active'),
+          getPayments({ status: 'upcoming' }),
+          getReportBreakdown(),
+        ]);
+      setSummaryData(summary);
+      setBreakdown(bkd);
+      setPropertiesCount(props.length);
+      setOverdueCount(overduePayments.length);
+      const rentals: ActiveRentalItem[] = activeContracts.map((c) => {
+        const overdueP = overduePayments.find((p) => p.contractId === c._id);
+        const upcomingP = upcomingPayments.find((p) => p.contractId === c._id);
+        const relevantPayment = overdueP ?? upcomingP;
+        return {
+          id: c._id,
+          propertyId: c.propertyId._id,
+          name: c.propertyId.name,
+          tenant: c.tenantId.fullName,
+          rent: `EGP ${c.rent.toLocaleString()}`,
+          contractEndISO: c.endDate,
+          contractEnd: formatDashboardDate(new Date(c.endDate)),
+          dueDate: relevantPayment
+            ? formatDashboardDate(new Date(relevantPayment.dueDate))
+            : '—',
+          payStatus: overdueP ? 'overdue' : upcomingP ? 'upcoming' : 'paid',
+          contractStatus: c.status as ActiveRentalItem['contractStatus'],
+          paymentId: relevantPayment?._id ?? null,
+        };
+      });
+      setActiveRentals(rentals);
+    } catch (e) {
+      console.error('[Dashboard] loadDashboard failed:', e);
+    } finally { setLoading(false); }
+  }, []);
 
-  const payStatusConfig = {
+  useFocusEffect(
+    useCallback(() => { loadDashboard(); }, [loadDashboard])
+  );
+
+  const menuRental = activeRentals.find((r) => r.id === openMenuId);
+  const isPayable =
+    menuRental?.payStatus === 'overdue' || menuRental?.payStatus === 'upcoming';
+
+  const payStatusConfig = useMemo(() => ({
     paid: { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer, label: t('dashboard.paid') },
     upcoming: { bg: Colors.tertiaryFixed, text: Colors.onTertiaryFixed, label: t('dashboard.due') },
     overdue: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('dashboard.late') },
-  };
+  }), [Colors, t]);
+
+  // Balance card: use current-month breakdown (not YTD summary)
+  const monthlyExpected =
+    (breakdown?.paid?.amount ?? 0) +
+    (breakdown?.upcoming?.amount ?? 0) +
+    (breakdown?.overdue?.amount ?? 0);
+  const monthlyCollected = breakdown?.paid?.amount ?? 0;
+  const monthlyPercent = monthlyExpected > 0
+    ? Math.round((monthlyCollected / monthlyExpected) * 100)
+    : 0;
+
+  const avatarInitials = user?.name
+    ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+    : '?';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -101,9 +156,9 @@ export default function DashboardScreen() {
             activeOpacity={0.7}
             onPress={() => setAvatarMenuOpen(true)}
           >
-            <Text style={styles.avatarText}>SC</Text>
+            <Text style={styles.avatarText}>{avatarInitials}</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{t('dashboard.headerTitle')}</Text>
+          <Text style={styles.headerTitle}>{user?.name}</Text>
         </View>
       </View>
 
@@ -116,12 +171,13 @@ export default function DashboardScreen() {
         <View style={styles.bentoGrid}>
           {/* Main Balance Card */}
           <View style={styles.balanceCard}>
-            {/* Decorative circle */}
             <View style={styles.decorativeCircle} />
 
             <View>
               <Text style={styles.balanceLabel}>{t('dashboard.monthlyPerf')}</Text>
-              <Text style={styles.balanceAmount}>$18,450.00</Text>
+              <Text style={styles.balanceAmount}>
+                {loading ? '...' : `EGP ${monthlyExpected.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}`}
+              </Text>
               <Text style={styles.balanceSubLabel}>{t('dashboard.expectedMonth')}</Text>
             </View>
 
@@ -129,9 +185,13 @@ export default function DashboardScreen() {
               <View>
                 <Text style={styles.collectedLabel}>{t('dashboard.collected')}</Text>
                 <View style={styles.collectedRow}>
-                  <Text style={styles.collectedAmount}>$14,200</Text>
+                  <Text style={styles.collectedAmount}>
+                    {loading ? '...' : `EGP ${monthlyCollected.toLocaleString()}`}
+                  </Text>
                   <View style={styles.percentBadge}>
-                    <Text style={styles.percentText}>77%</Text>
+                    <Text style={styles.percentText}>
+                      {loading ? '—' : `${monthlyPercent}%`}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -160,23 +220,38 @@ export default function DashboardScreen() {
                 </View>
                 <Text style={styles.statArrow}>↗</Text>
               </View>
-              <Text style={styles.statNumber}>05</Text>
+              <Text style={styles.statNumber}>
+                {loading ? '—' : String(propertiesCount).padStart(2, '0')}
+              </Text>
               <Text style={styles.statLabel}>{t('dashboard.totalPortfolio')}</Text>
-              <Text style={styles.statSubLabel}>{t('dashboard.rented')}</Text>
+              {/* <Text style={styles.statSubLabel}>{t('dashboard.rented')}</Text> */}
             </TouchableOpacity>
 
             {/* Overdue Card */}
-            <View style={[styles.statCard, styles.overdueCard]}>
-              <View style={styles.statCardTop}>
-                <View style={styles.warningIconContainer}>
-                  <Text style={styles.statIcon}>⚠️</Text>
+            {(() => {
+              const hasOverdue = overdueCount > 0;
+              return (
+                <View style={[styles.statCard, hasOverdue ? styles.overdueCard : styles.clearCard]}>
+                  <View style={styles.statCardTop}>
+                    <View style={hasOverdue ? styles.warningIconContainer : styles.clearIconContainer}>
+                      <Text style={styles.statIcon}>{hasOverdue ? '⚠️' : '✓'}</Text>
+                    </View>
+                    <Text style={[styles.statArrow, { color: hasOverdue ? `${Colors.onErrorContainer}4d` : `${Colors.onSecondaryContainer}4d` }]}>
+                      {hasOverdue ? '!' : ''}
+                    </Text>
+                  </View>
+                  <Text style={[styles.statNumber, hasOverdue ? styles.overdueNumber : styles.clearNumber]}>
+                    {loading ? '—' : String(overdueCount).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.statLabel, hasOverdue ? styles.overdueLabel : styles.clearLabel]}>
+                    {hasOverdue ? t('dashboard.overduePayments') : t('dashboard.noOverdue')}
+                  </Text>
+                  <Text style={[styles.statSubLabel, hasOverdue ? styles.overdueSubLabel : styles.clearSubLabel]}>
+                    {hasOverdue ? t('dashboard.attentionReq') : t('dashboard.allClear')}
+                  </Text>
                 </View>
-                <Text style={[styles.statArrow, { color: `${Colors.onErrorContainer}4d` }]}>!</Text>
-              </View>
-              <Text style={[styles.statNumber, styles.overdueNumber]}>02</Text>
-              <Text style={[styles.statLabel, styles.overdueLabel]}>{t('dashboard.overduePayments')}</Text>
-              <Text style={[styles.statSubLabel, styles.overdueSubLabel]}>{t('dashboard.attentionReq')}</Text>
-            </View>
+              );
+            })()}
           </View>
         </View>
 
@@ -201,59 +276,63 @@ export default function DashboardScreen() {
         </View>
 
         {/* Property List */}
-        <View style={styles.propertyList}>
-          {properties.filter(p => p.contractStatus === 'active').map((property) => {
-            const pay = payStatusConfig[property.payStatus];
-            const expiring = isExpiringSoon(property.contractEnd);
-            return (
-              <View key={property.id} style={styles.propertyCard}>
-                {/* Row 1: Thumb + Name + More */}
-                <View style={styles.cardTopRow}>
-                  <View style={styles.propertyThumb}>
-                    <Text style={{ fontSize: 20 }}>🏠</Text>
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 20 }} color={Colors.primary} />
+        ) : (
+          <View style={styles.propertyList}>
+            {activeRentals.map((rental) => {
+              const pay = payStatusConfig[rental.payStatus];
+              const expiring = isExpiringSoon(rental.contractEndISO);
+              return (
+                <View key={rental.id} style={styles.propertyCard}>
+                  {/* Row 1: Thumb + Name + More */}
+                  <View style={styles.cardTopRow}>
+                    <View style={styles.propertyThumb}>
+                      <Text style={{ fontSize: 20 }}>🏠</Text>
+                    </View>
+                    <Text style={styles.propertyName}>{rental.name}</Text>
+                    <TouchableOpacity
+                      style={styles.moreButton}
+                      activeOpacity={0.6}
+                      onPress={() => setOpenMenuId(rental.id)}
+                    >
+                      <Text style={styles.moreButtonText}>⋮</Text>
+                    </TouchableOpacity>
                   </View>
-                  <Text style={styles.propertyName}>{property.name}</Text>
-                  <TouchableOpacity
-                    style={styles.moreButton}
-                    activeOpacity={0.6}
-                    onPress={() => setOpenMenuId(property.id)}
-                  >
-                    <Text style={styles.moreButtonText}>⋮</Text>
-                  </TouchableOpacity>
-                </View>
 
-                {/* Row 2: Tenant (left) + Contract end badge (right) */}
-                <View style={styles.tenantContractRow}>
-                  <View style={styles.tenantInfo}>
-                    <Text style={styles.tenantIcon}>👤</Text>
-                    <Text style={styles.tenantName}>{property.tenant}</Text>
+                  {/* Row 2: Tenant (left) + Contract end badge (right) */}
+                  <View style={styles.tenantContractRow}>
+                    <View style={styles.tenantInfo}>
+                      <Text style={styles.tenantIcon}>👤</Text>
+                      <Text style={styles.tenantName}>{rental.tenant}</Text>
+                    </View>
+                    <View style={[styles.contractEndBadge, expiring && styles.contractEndBadgeWarning]}>
+                      <Text style={styles.contractEndUpperLabel}>{t('dashboard.contractEnd')}</Text>
+                      <Text style={[styles.contractEndDateText, expiring && styles.contractEndDateTextWarning]}>
+                        {rental.contractEnd}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={[styles.contractEndBadge, expiring && styles.contractEndBadgeWarning]}>
-                    <Text style={styles.contractEndUpperLabel}>{t('dashboard.contractEnd')}</Text>
-                    <Text style={[styles.contractEndDateText, expiring && styles.contractEndDateTextWarning]}>
-                      {property.contractEnd}
-                    </Text>
+
+                  {/* Divider */}
+                  <View style={styles.cardDivider} />
+
+                  {/* Row 3: Due date (left) + pay badge + rent */}
+                  <View style={styles.cardFooterRow}>
+                    <View style={styles.dueDateGroup}>
+                      <Text style={styles.dueDateLabel}>{t('dashboard.dueDate')}</Text>
+                      <Text style={styles.dueDateValue}>{rental.dueDate}</Text>
+                    </View>
+                    <View style={[styles.metaBadge, { backgroundColor: pay.bg }]}>
+                      <Text style={[styles.metaBadgeText, { color: pay.text }]}>{pay.label}</Text>
+                    </View>
+                    <Text style={styles.rentAmount}>{rental.rent}</Text>
                   </View>
                 </View>
-
-                {/* Divider */}
-                <View style={styles.cardDivider} />
-
-                {/* Row 3: Due date (left) + pay badge + rent */}
-                <View style={styles.cardFooterRow}>
-                  <View style={styles.dueDateGroup}>
-                    <Text style={styles.dueDateLabel}>{t('dashboard.dueDate')}</Text>
-                    <Text style={styles.dueDateValue}>{property.dueDate}</Text>
-                  </View>
-                  <View style={[styles.metaBadge, { backgroundColor: pay.bg }]}>
-                    <Text style={[styles.metaBadgeText, { color: pay.text }]}>{pay.label}</Text>
-                  </View>
-                  <Text style={styles.rentAmount}>{property.rent}/mo</Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
 
       {/* ── Avatar Dropdown Modal ── */}
@@ -319,6 +398,7 @@ export default function DashboardScreen() {
               activeOpacity={0.7}
               onPress={() => {
                 setAvatarMenuOpen(false);
+                logout();
                 rootNavigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
               }}
             >
@@ -342,7 +422,7 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* ── Property Card Dropdown Modal ── */}
+      {/* ── Rental Card Dropdown Modal ── */}
       <Modal
         visible={openMenuId !== null}
         transparent
@@ -354,19 +434,18 @@ export default function DashboardScreen() {
           activeOpacity={1}
           onPress={() => setOpenMenuId(null)}
         >
-          {/* Menu card — inner tap stops propagation to overlay */}
           <TouchableOpacity style={styles.menuCard} activeOpacity={1} onPress={() => {}}>
             {/* View Details */}
             <TouchableOpacity
               style={styles.menuItem}
               activeOpacity={0.7}
               onPress={() => {
-                const id = openMenuId;
+                const rental = activeRentals.find((r) => r.id === openMenuId);
                 setOpenMenuId(null);
-                if (id) {
+                if (rental) {
                   navigation.navigate('Properties', {
                     screen: 'PropertyDetail',
-                    params: { propertyId: id },
+                    params: { propertyId: rental.propertyId },
                   } as any);
                 }
               }}
@@ -380,7 +459,17 @@ export default function DashboardScreen() {
             <TouchableOpacity
               style={styles.menuItem}
               activeOpacity={isPayable ? 0.7 : 1}
-              onPress={isPayable ? () => setOpenMenuId(null) : undefined}
+              onPress={isPayable ? async () => {
+                const rental = activeRentals.find((r) => r.id === openMenuId);
+                setOpenMenuId(null);
+                if (!rental?.paymentId) return;
+                try {
+                  await collectPayment(rental.paymentId);
+                  await loadDashboard();
+                } catch (e) {
+                  Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+                }
+              } : undefined}
             >
               <Text
                 style={[
@@ -551,6 +640,23 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     overdueCard: {
       backgroundColor: C.errorContainer,
     },
+    clearCard: {
+      backgroundColor: C.secondaryContainer,
+    },
+    clearIconContainer: {
+      width: 44,
+      height: 44,
+      borderRadius: BorderRadius.xxl,
+      backgroundColor: 'rgba(255,255,255,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    clearNumber: { color: C.onSecondaryContainer },
+    clearLabel: {
+      color: C.onSecondaryContainer,
+      fontFamily: FontFamily.interSemiBold,
+    },
+    clearSubLabel: { color: `${C.onSecondaryContainer}b3` },
     statCardTop: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -633,31 +739,11 @@ function makeStyles(C: ReturnType<typeof useColors>) {
       shadowRadius: 8,
       elevation: 2,
     },
-    actionButtonPrimary: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: Spacing.xs,
-      backgroundColor: C.primary,
-      paddingVertical: 12,
-      borderRadius: BorderRadius.xxl,
-      shadowColor: C.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 16,
-      elevation: 4,
-    },
     actionButtonIcon: { fontSize: 16 },
     actionButtonSecondaryText: {
       ...Typography.labelMd,
       fontFamily: FontFamily.interSemiBold,
       color: C.primary,
-    },
-    actionButtonPrimaryText: {
-      ...Typography.labelMd,
-      fontFamily: FontFamily.interSemiBold,
-      color: C.onPrimary,
     },
 
     // ── Property cards ──

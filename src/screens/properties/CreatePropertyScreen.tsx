@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  StyleSheet, KeyboardAvoidingView, Platform,
+  StyleSheet, KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
+import { createProperty } from '../../services/api';
 
 export default function CreatePropertyScreen() {
   const navigation = useNavigation();
@@ -17,12 +18,43 @@ export default function CreatePropertyScreen() {
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [area, setArea] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const fields = [
     { label: t('createProperty.name'), value: name, onChange: setName, placeholder: t('createProperty.namePlaceholder') },
     { label: t('createProperty.address'), value: address, onChange: setAddress, placeholder: t('createProperty.addressPlaceholder') },
     { label: t('createProperty.area'), value: area, onChange: setArea, placeholder: t('createProperty.areaPlaceholder'), keyboardType: 'number-pad' as const },
   ];
+
+  async function handleSubmit() {
+    if (!name.trim() || !address.trim()) {
+      Alert.alert('Validation', 'Name and address are required.');
+      return;
+    }
+    if (name.trim().length > 100) {
+      Alert.alert('Validation', 'Property name must be 100 characters or less.');
+      return;
+    }
+    if (address.trim().length > 255) {
+      Alert.alert('Validation', 'Address must be 255 characters or less.');
+      return;
+    }
+    if (area && (isNaN(Number(area)) || Number(area) <= 0)) {
+      Alert.alert('Validation', 'Area must be a positive number.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await createProperty({ name: name.trim(), address: address.trim(), area: area ? Number(area) : undefined });
+      Alert.alert('Success', 'Property created successfully.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create property');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -50,8 +82,16 @@ export default function CreatePropertyScreen() {
             </View>
           ))}
 
-          <TouchableOpacity style={styles.submitButton} activeOpacity={0.9}>
-            <Text style={styles.submitButtonText}>{t('createProperty.submit')}</Text>
+          <TouchableOpacity
+            style={[styles.submitButton, loading && { opacity: 0.7 }]}
+            activeOpacity={0.9}
+            disabled={loading}
+            onPress={handleSubmit}
+          >
+            {loading
+              ? <ActivityIndicator color={Colors.onPrimary} />
+              : <Text style={styles.submitButtonText}>{t('createProperty.submit')}</Text>
+            }
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  StyleSheet, KeyboardAvoidingView, Platform,
+  StyleSheet, KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
+import { createTenant } from '../../services/api';
 
 export default function CreateTenantScreen() {
   const navigation = useNavigation();
@@ -15,14 +16,48 @@ export default function CreateTenantScreen() {
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
   const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [id, setId] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const fields = [
     { label: t('createTenant.fullName'), value: fullName, onChange: setFullName, placeholder: t('createTenant.fullNamePlaceholder') },
     { label: t('createTenant.phone'), value: phone, onChange: setPhone, placeholder: t('createTenant.phonePlaceholder'), keyboardType: 'phone-pad' as const },
     { label: t('createTenant.id'), value: id, onChange: setId, placeholder: t('createTenant.idPlaceholder'), keyboardType: 'number-pad' as const },
   ];
+
+  async function handleSubmit() {
+    if (!fullName.trim()) {
+      Alert.alert('Validation', 'Full name is required.');
+      return;
+    }
+    if (fullName.trim().length > 100) {
+      Alert.alert('Validation', 'Full name must be 100 characters or less.');
+      return;
+    }
+    if (phone && phone.trim().length > 20) {
+      Alert.alert('Validation', 'Phone number must be 20 characters or less.');
+      return;
+    }
+    setLoading(true);
+    try {
+      
+      await createTenant({
+        fullName: fullName.trim(),
+        phone: phone.trim() || undefined,
+        identificationId: id || undefined,
+      });
+      Alert.alert('Success', 'Tenant added successfully.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (e) {
+      
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create tenant');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -50,8 +85,16 @@ export default function CreateTenantScreen() {
             </View>
           ))}
 
-          <TouchableOpacity style={styles.submitButton} activeOpacity={0.9}>
-            <Text style={styles.submitButtonText}>{t('createTenant.submit')}</Text>
+          <TouchableOpacity
+            style={[styles.submitButton, loading && { opacity: 0.7 }]}
+            activeOpacity={0.9}
+            disabled={loading}
+            onPress={handleSubmit}
+          >
+            {loading
+              ? <ActivityIndicator color={Colors.onPrimary} />
+              : <Text style={styles.submitButtonText}>{t('createTenant.submit')}</Text>
+            }
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

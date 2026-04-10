@@ -1,19 +1,14 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { TenantsStackParamList } from '../../navigation';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
+import { getTenants, deleteTenant, type ApiTenant } from '../../services/api';
 
 type NavProp = NativeStackNavigationProp<TenantsStackParamList>;
-
-const tenants = [
-  { id: '1', name: 'Julianne Sterling', property: 'The Meridian Penthouse', email: 'julianne@example.com', rent: '$4,200', status: 'paid' },
-  { id: '2', name: 'Marcus Thorne', property: 'Cascade Lofts #4B', email: 'marcus@example.com', rent: '$2,850', status: 'upcoming' },
-  { id: '3', name: 'Elena Vasquez', property: 'Harborview Suite', email: 'elena@example.com', rent: '$3,600', status: 'overdue' },
-];
 
 export default function TenantsListScreen() {
   const navigation = useNavigation<NavProp>();
@@ -21,11 +16,46 @@ export default function TenantsListScreen() {
   const { t } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
-  const statusConfig = {
+  const [tenants, setTenants] = useState<ApiTenant[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadTenants = useCallback(() => {
+    setLoading(true);
+    getTenants()
+      .then(setTenants)
+      .catch(() => Alert.alert('Error', 'Failed to load tenants'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadTenants(); }, [loadTenants]));
+
+  const handleLongPress = useCallback((id: string) => {
+    Alert.alert(
+      t('tenants.deleteTitle'),
+      t('tenants.deleteMessage'),
+      [
+        { text: t('tenants.deleteCancel'), style: 'cancel' },
+        {
+          text: t('tenants.deleteConfirm'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteTenant(id);
+              loadTenants();
+            } catch (e) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Failed to delete tenant');
+            }
+          },
+        },
+      ]
+    );
+  }, [t, loadTenants]);
+
+  const statusConfig = useMemo<Record<string, { bg: string; text: string; label: string }>>(() => ({
     paid: { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer, label: t('tenants.paid') },
     upcoming: { bg: Colors.tertiaryFixed, text: Colors.onTertiaryFixed, label: t('tenants.upcoming') },
     overdue: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('tenants.overdue') },
-  };
+  }), [Colors, t]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -42,29 +72,43 @@ export default function TenantsListScreen() {
           <Text style={styles.addButtonText}>{t('tenants.newButton')}</Text>
         </TouchableOpacity>
       </View>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {tenants.map((tenant) => {
-          const status = statusConfig[tenant.status as keyof typeof statusConfig];
-          return (
-            <TouchableOpacity key={tenant.id} style={styles.card} activeOpacity={0.7}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{tenant.name.split(' ').map(n => n[0]).join('')}</Text>
-              </View>
-              <View style={styles.info}>
-                <View style={styles.nameRow}>
-                  <Text style={styles.name}>{tenant.name}</Text>
-                  <View style={[styles.badge, { backgroundColor: status.bg }]}>
-                    <Text style={[styles.badgeText, { color: status.text }]}>{status.label}</Text>
-                  </View>
+
+      {loading ? (
+        <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
+      ) : (
+        <FlatList
+          data={tenants}
+          keyExtractor={(tenant) => tenant._id}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item: tenant }) => {
+            const status = tenant.paymentStatus ? statusConfig[tenant.paymentStatus] : undefined;
+            const initials = tenant.fullName.split(' ').map((n) => n[0]).join('');
+            return (
+              <TouchableOpacity style={styles.card} activeOpacity={0.7} onLongPress={() => handleLongPress(tenant._id)}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials}</Text>
                 </View>
-                <Text style={styles.property}>{tenant.property}</Text>
-                <Text style={styles.email}>{tenant.email}</Text>
-                <Text style={styles.rent}>{tenant.rent}/mo</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+                <View style={styles.info}>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.name}>{tenant.fullName}</Text>
+                    {status && (
+                      <View style={[styles.badge, { backgroundColor: status.bg }]}>
+                        <Text style={[styles.badgeText, { color: status.text }]}>{status.label}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {tenant.currentProperty && (
+                    <Text style={styles.property}>{tenant.currentProperty}</Text>
+                  )}
+                  <Text style={styles.secondaryInfo}>{tenant.phone}</Text>
+                  <Text style={styles.secondaryInfo}>{tenant.identificationId}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -119,7 +163,6 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: BorderRadius.sm },
     badgeText: { ...Typography.labelSm, letterSpacing: 0.5 },
     property: { ...Typography.bodyMd, color: C.onSurfaceVariant },
-    email: { ...Typography.bodySm, color: C.onSurfaceVariant, opacity: 0.7 },
-    rent: { ...Typography.labelMd, fontFamily: FontFamily.interSemiBold, color: C.secondary, marginTop: 4 },
+    secondaryInfo: { ...Typography.bodySm, color: C.onSurfaceVariant, opacity: 0.7 },
   });
 }
