@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -79,12 +80,13 @@ export default function DashboardScreen() {
     setLoading(true);
     const year = new Date().getFullYear();
     try {
-      const [summary, props, overduePayments, activeContracts, upcomingPayments, bkd] =
+      const [summary, props, overduePayments, activeContracts, expiringContracts, upcomingPayments, bkd] =
         await Promise.all([
           getReportSummary(year),
           getProperties(),
           getPayments({ status: 'overdue' }),
           getContracts('active'),
+          getContracts('expiring'),
           getPayments({ status: 'upcoming' }),
           getReportBreakdown(),
         ]);
@@ -92,7 +94,8 @@ export default function DashboardScreen() {
       setBreakdown(bkd);
       setPropertiesCount(props.length);
       setOverdueCount(overduePayments.length);
-      const rentals: ActiveRentalItem[] = activeContracts.map((c) => {
+      const allActiveContracts = [...activeContracts, ...expiringContracts];
+      const rentals: ActiveRentalItem[] = allActiveContracts.map((c) => {
         const overdueP = overduePayments.find((p) => p.contractId === c._id);
         const upcomingP = upcomingPayments.find((p) => p.contractId === c._id);
         const relevantPayment = overdueP ?? upcomingP;
@@ -131,6 +134,16 @@ export default function DashboardScreen() {
     upcoming: { bg: Colors.tertiaryFixed, text: Colors.onTertiaryFixed, label: t('dashboard.due') },
     overdue: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('dashboard.late') },
   }), [Colors, t]);
+
+  const [rentalSearch, setRentalSearch] = useState('');
+  const [payFilter, setPayFilter] = useState<string | null>(null);
+
+  const filteredRentals = useMemo(() =>
+    activeRentals
+      .filter(r => r.name.toLowerCase().includes(rentalSearch.toLowerCase()))
+      .filter(r => !payFilter || r.payStatus === payFilter),
+    [activeRentals, rentalSearch, payFilter]
+  );
 
   // Balance card: use current-month breakdown (not YTD summary)
   const monthlyExpected =
@@ -263,16 +276,35 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Quick Actions */}
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.actionButtonSecondary}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('Contracts', { screen: 'CreateContract' } as any)}
-          >
-            <Text style={styles.actionButtonIcon}>📄</Text>
-            <Text style={styles.actionButtonSecondaryText}>{t('dashboard.addContract')}</Text>
-          </TouchableOpacity>
+        {/* Search + Filter */}
+        <View style={styles.rentalSearchContainer}>
+          <TextInput
+            style={styles.dashSearchBar}
+            value={rentalSearch}
+            onChangeText={setRentalSearch}
+            placeholder="Search by property..."
+            placeholderTextColor={Colors.outlineVariant}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <View style={styles.dashFilterRow}>
+            {[
+              { label: 'All',  value: null },
+              { label: 'Late', value: 'overdue' },
+              { label: 'Due',  value: 'upcoming' },
+            ].map(chip => (
+              <TouchableOpacity
+                key={chip.label}
+                style={[styles.dashFilterChip, payFilter === chip.value && styles.dashFilterChipActive]}
+                activeOpacity={0.7}
+                onPress={() => setPayFilter(chip.value)}
+              >
+                <Text style={[styles.dashFilterChipText, payFilter === chip.value && styles.dashFilterChipTextActive]}>
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Property List */}
@@ -280,7 +312,7 @@ export default function DashboardScreen() {
           <ActivityIndicator style={{ marginTop: 20 }} color={Colors.primary} />
         ) : (
           <View style={styles.propertyList}>
-            {activeRentals.map((rental) => {
+            {filteredRentals.map((rental) => {
               const pay = payStatusConfig[rental.payStatus];
               const expiring = isExpiringSoon(rental.contractEndISO);
               return (
@@ -719,32 +751,31 @@ function makeStyles(C: ReturnType<typeof useColors>) {
       ...Typography.bodyMd,
       color: C.onSurfaceVariant,
     },
-    actionsRow: {
-      flexDirection: 'row',
-      gap: Spacing.md,
-      marginBottom: Spacing.lg,
-    },
-    actionButtonSecondary: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: Spacing.xs,
+    // ── Rental search + filter ──
+    rentalSearchContainer: { gap: Spacing.sm, marginBottom: Spacing.lg },
+    dashSearchBar: {
       backgroundColor: C.surfaceContainerLowest,
+      borderRadius: BorderRadius.xl,
+      paddingHorizontal: Spacing.md,
       paddingVertical: 12,
-      borderRadius: BorderRadius.xxl,
+      ...Typography.bodyMd,
+      color: C.onSurface,
       shadowColor: C.onSurface,
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.04,
       shadowRadius: 8,
       elevation: 2,
     },
-    actionButtonIcon: { fontSize: 16 },
-    actionButtonSecondaryText: {
-      ...Typography.labelMd,
-      fontFamily: FontFamily.interSemiBold,
-      color: C.primary,
+    dashFilterRow: { flexDirection: 'row', gap: Spacing.xs },
+    dashFilterChip: {
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: BorderRadius.xl,
+      backgroundColor: C.surfaceContainerLowest,
     },
+    dashFilterChipActive: { backgroundColor: C.primary },
+    dashFilterChipText: { ...Typography.labelSm, color: C.onSurfaceVariant, fontFamily: FontFamily.interSemiBold },
+    dashFilterChipTextActive: { color: C.onPrimary },
 
     // ── Property cards ──
     propertyList: { gap: Spacing.md },

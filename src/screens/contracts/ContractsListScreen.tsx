@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,6 +22,12 @@ export default function ContractsListScreen() {
 
   const [contracts, setContracts] = useState<ApiContract[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const filteredContracts = useMemo(
+    () => contracts.filter(c => c.propertyId.name.toLowerCase().includes(search.toLowerCase())),
+    [contracts, search]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -56,11 +62,23 @@ export default function ContractsListScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchBar}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search by property name..."
+          placeholderTextColor={Colors.outlineVariant}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+
       {loading ? (
         <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
-          data={contracts}
+          data={filteredContracts}
           keyExtractor={(c) => c._id}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -113,6 +131,15 @@ function makeStyles(C: ReturnType<typeof useColors>) {
       borderRadius: BorderRadius.xl,
     },
     newButtonText: { ...Typography.labelSm, fontFamily: FontFamily.interSemiBold, color: C.onPrimary, letterSpacing: 0.8 },
+    searchContainer: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
+    searchBar: {
+      backgroundColor: C.surfaceContainerLow,
+      borderRadius: BorderRadius.xl,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 12,
+      ...Typography.bodyMd,
+      color: C.onSurface,
+    },
     content: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md },
     card: {
       backgroundColor: C.surfaceContainerLowest,

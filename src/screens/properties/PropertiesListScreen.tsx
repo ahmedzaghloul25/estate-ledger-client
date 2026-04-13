@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,6 +18,15 @@ export default function PropertiesListScreen() {
 
   const [properties, setProperties] = useState<ApiProperty[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+
+  const filteredProperties = useMemo(
+    () => properties
+      .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+      .filter(p => !statusFilter || p.status === statusFilter),
+    [properties, search, statusFilter]
+  );
 
   const loadProperties = useCallback(() => {
     setLoading(true);
@@ -73,11 +82,42 @@ export default function PropertiesListScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchBar}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search properties..."
+          placeholderTextColor={Colors.outlineVariant}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <View style={styles.filterRow}>
+          {[
+            { label: 'All',       value: null },
+            { label: 'Available', value: 'available' },
+            { label: 'Rented',    value: 'rented' },
+            { label: 'Overdue',   value: 'overdue' },
+          ].map(chip => (
+            <TouchableOpacity
+              key={chip.label}
+              style={[styles.filterChip, statusFilter === chip.value && styles.filterChipActive]}
+              activeOpacity={0.7}
+              onPress={() => setStatusFilter(chip.value)}
+            >
+              <Text style={[styles.filterChipText, statusFilter === chip.value && styles.filterChipTextActive]}>
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       {loading ? (
         <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
-          data={properties}
+          data={filteredProperties}
           keyExtractor={(p) => p._id}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -149,6 +189,25 @@ function makeStyles(C: ReturnType<typeof useColors>) {
       color: C.onSurfaceVariant,
       marginTop: 4,
     },
+    searchContainer: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm, gap: Spacing.sm },
+    searchBar: {
+      backgroundColor: C.surfaceContainerLow,
+      borderRadius: BorderRadius.xl,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 12,
+      ...Typography.bodyMd,
+      color: C.onSurface,
+    },
+    filterRow: { flexDirection: 'row', gap: Spacing.xs },
+    filterChip: {
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: BorderRadius.xl,
+      backgroundColor: C.surfaceContainerLow,
+    },
+    filterChipActive: { backgroundColor: C.primary },
+    filterChipText: { ...Typography.labelSm, color: C.onSurfaceVariant, fontFamily: FontFamily.interSemiBold },
+    filterChipTextActive: { color: C.onPrimary },
     content: {
       paddingHorizontal: Spacing.lg,
       paddingBottom: Spacing.xxl,
