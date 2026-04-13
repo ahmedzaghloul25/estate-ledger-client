@@ -10,6 +10,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -67,7 +68,7 @@ export default function LoginScreen() {
           {/* Brand Header */}
           <View style={styles.brandSection}>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoIcon}>⚖</Text>
+              <Image source={require('../../../assets/favicon.png')} style={styles.logoIcon} />
             </View>
             <Text style={styles.brandName}>{t('login.brand')}</Text>
           </View>
@@ -154,16 +155,17 @@ function makeStyles(C: ReturnType<typeof useColors>) {
       marginBottom: Spacing.xxl,
     },
     logoContainer: {
-      width: 40,
-      height: 40,
+      width: 50,
+      height: 50,
       borderRadius: BorderRadius.xl,
-      backgroundColor: C.primary,
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor : 'red',
+      overflow: 'hidden'
     },
     logoIcon: {
-      fontSize: 18,
-      color: C.onPrimary,
+      width: 60,
+      height: 60,
     },
     brandName: {
       ...Typography.titleLg,

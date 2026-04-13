@@ -1,23 +1,76 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
-
-const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-const barData = [14200, 16800, 13400, 18450, 15200, 17600];
-const maxBar = Math.max(...barData);
+import {
+  getReportSummary,
+  getReportMonthly,
+  getReportBreakdown,
+  type ApiSummary,
+  type ApiMonthlyPoint,
+  type ApiBreakdown,
+} from '../../services/api';
 
 export default function ReportsScreen() {
   const Colors = useColors();
   const { t } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
-  const breakdown = [
-    { labelKey: 'reports.collected' as const, amount: '$14,200', pct: 77, color: Colors.secondary },
-    { labelKey: 'reports.pending' as const, amount: '$2,850', pct: 15, color: Colors.onTertiaryContainer },
-    { labelKey: 'reports.overdue' as const, amount: '$1,400', pct: 8, color: Colors.error },
-  ];
+  const [summary, setSummary] = useState<ApiSummary | null>(null);
+  const [monthly, setMonthly] = useState<ApiMonthlyPoint[]>([]);
+  const [breakdown, setBreakdown] = useState<ApiBreakdown | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      const year = new Date().getFullYear();
+      Promise.all([
+        getReportSummary(year),
+        getReportMonthly(6),
+        getReportBreakdown(),
+      ])
+        .then(([s, m, b]) => {
+          setSummary(s);
+          setMonthly(Array.isArray(m) ? m : m?.data ?? []);
+          setBreakdown(b);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, [])
+  );
+
+  const barData = (monthly ?? []).map((m) => m?.amount ?? 0);
+  const maxBar = Math.max(...barData, 1);
+
+  const total = breakdown
+    ? (breakdown.paid?.amount ?? 0) + (breakdown.upcoming?.amount ?? 0) + (breakdown.overdue?.amount ?? 0)
+    : 0;
+
+  const breakdownItems = breakdown && total > 0
+    ? [
+        {
+          labelKey: 'reports.collected' as const,
+          amount: `EGP ${(breakdown.paid?.amount ?? 0).toLocaleString()}`,
+          pct: Math.round(((breakdown.paid?.amount ?? 0) / total) * 100),
+          color: Colors.secondary,
+        },
+        {
+          labelKey: 'reports.pending' as const,
+          amount: `EGP ${(breakdown.upcoming?.amount ?? 0).toLocaleString()}`,
+          pct: Math.round(((breakdown.upcoming?.amount ?? 0) / total) * 100),
+          color: Colors.onTertiaryContainer,
+        },
+        {
+          labelKey: 'reports.overdue' as const,
+          amount: `EGP ${(breakdown.overdue?.amount ?? 0).toLocaleString()}`,
+          pct: Math.round(((breakdown.overdue?.amount ?? 0) / total) * 100),
+          color: Colors.error,
+        },
+      ]
+    : [];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -25,51 +78,63 @@ export default function ReportsScreen() {
         <Text style={styles.title}>{t('reports.title')}</Text>
         <Text style={styles.subtitle}>{t('reports.subtitle')}</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Revenue Summary */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>{t('reports.ytdRevenue')}</Text>
-          <Text style={styles.summaryAmount}>$95,650</Text>
-          <Text style={styles.summaryTrend}>{t('reports.trend')}</Text>
-        </View>
 
-        {/* Mini Bar Chart */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>{t('reports.monthlyCollections')}</Text>
-          <View style={styles.chart}>
-            {barData.map((val, i) => (
-              <View key={i} style={styles.barWrapper}>
-                <Text style={styles.barValue}>${(val / 1000).toFixed(1)}k</Text>
-                <View style={styles.barTrack}>
-                  <View
-                    style={[
-                      styles.bar,
-                      { height: `${(val / maxBar) * 100}%` as any },
-                      i === 3 && styles.barActive,
-                    ]}
-                  />
-                </View>
-                <Text style={styles.barLabel}>{months[i]}</Text>
+      {loading ? (
+        <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Revenue Summary */}
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>{t('reports.ytdRevenue')}</Text>
+            <Text style={styles.summaryAmount}>
+              EGP {summary?.ytdRevenue?.toLocaleString() ?? '—'}
+            </Text>
+          </View>
+
+          {/* Mini Bar Chart */}
+          {monthly.length > 0 && (
+            <View style={styles.chartCard}>
+              <Text style={styles.chartTitle}>{t('reports.monthlyCollections')}</Text>
+              <View style={styles.chart}>
+                {barData.map((val, i) => (
+                  <View key={i} style={styles.barWrapper}>
+                    <Text style={styles.barValue}>{(val / 1000).toFixed(1)}k</Text>
+                    <View style={styles.barTrack}>
+                      <View
+                        style={[
+                          styles.bar,
+                          { height: `${(val / maxBar) * 100}%` as any },
+                          i === monthly.length - 1 && styles.barActive,
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.barLabel}>{monthly[i].month}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
-        </View>
+            </View>
+          )}
 
-        {/* Breakdown */}
-        <Text style={styles.sectionTitle}>{t('reports.paymentBreakdown')}</Text>
-        {breakdown.map((item) => (
-          <View key={item.labelKey} style={styles.breakdownCard}>
-            <View>
-              <Text style={styles.breakdownLabel}>{t(item.labelKey)}</Text>
-              <Text style={styles.breakdownAmount}>{item.amount}</Text>
-            </View>
-            <View style={styles.breakdownBarContainer}>
-              <View style={[styles.breakdownBar, { width: `${item.pct}%` as any, backgroundColor: item.color }]} />
-            </View>
-            <Text style={styles.breakdownPct}>{item.pct}%</Text>
-          </View>
-        ))}
-      </ScrollView>
+          {/* Breakdown */}
+          {breakdownItems.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>{t('reports.paymentBreakdown')}</Text>
+              {breakdownItems.map((item) => (
+                <View key={item.labelKey} style={styles.breakdownCard}>
+                  <View>
+                    <Text style={styles.breakdownLabel}>{t(item.labelKey)}</Text>
+                    <Text style={styles.breakdownAmount}>{item.amount}</Text>
+                  </View>
+                  <View style={styles.breakdownBarContainer}>
+                    <View style={[styles.breakdownBar, { width: `${item.pct}%` as any, backgroundColor: item.color }]} />
+                  </View>
+                  <Text style={styles.breakdownPct}>{item.pct}%</Text>
+                </View>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

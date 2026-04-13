@@ -17,11 +17,11 @@ import {
 } from '../../services/api';
 
 function formatPaymentMonth(isoStr: string): string {
-  return new Date(isoStr).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 function formatPaymentDate(isoStr: string): string {
-  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
 export default function ContractPaymentsScreen() {
@@ -186,7 +186,7 @@ export default function ContractPaymentsScreen() {
             return (
               <View key={p._id} style={styles.paymentCard}>
                 <View>
-                  <Text style={styles.paymentMonth}>{formatPaymentMonth(p.dueDate)}</Text>
+                  {/* <Text style={styles.paymentMonth}>{formatPaymentMonth(p.dueDate)}</Text> */}
                   <Text style={styles.paymentDate}>{formatPaymentDate(p.dueDate)}</Text>
                 </View>
                 <View style={styles.paymentRight}>
@@ -245,7 +245,7 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     summaryDateCol: { flex: 1, gap: 2 },
     summaryDateLabel: { ...Typography.labelSm, color: C.primaryFixed, opacity: 0.6, letterSpacing: 0.5 },
     summaryDateValue: { ...Typography.labelMd, fontFamily: FontFamily.interSemiBold, color: C.onPrimary },
-    summaryDateSep: { ...Typography.bodyMd, color: C.primaryFixed, opacity: 0.4, paddingHorizontal: 40 },
+    summaryDateSep: { ...Typography.bodyMd, color: C.primaryFixed, opacity: 0.4, paddingHorizontal: 35 },
     summaryTotalRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -266,13 +266,13 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     paymentCard: {
       backgroundColor: C.surfaceContainerLowest,
       borderRadius: BorderRadius.xxl,
-      padding: Spacing.lg,
+      padding: Spacing.md,
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
     },
     paymentMonth: { ...Typography.titleSm, fontFamily: FontFamily.manropeBold, color: C.onSurface },
-    paymentDate: { ...Typography.bodyMd, color: C.onSurfaceVariant, marginTop: 2 },
+    paymentDate: { ...Typography.titleMd, fontFamily: FontFamily.manropeBold, color: C.onSurface },
     paymentRight: { alignItems: 'flex-end', gap: 6 },
     paymentAmount: { ...Typography.titleSm, fontFamily: FontFamily.manropeBold, color: C.onSurface },
     badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: BorderRadius.sm },
@@ -280,8 +280,8 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     collectButton: {
       backgroundColor: C.primary,
       borderRadius: BorderRadius.lg,
-      paddingHorizontal: 16,
-      paddingVertical: 6,
+      paddingHorizontal: 26,
+      paddingVertical: 7,
       minWidth: 70,
       alignItems: 'center',
     },

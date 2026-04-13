@@ -1,17 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  StyleSheet, KeyboardAvoidingView, Platform, Modal,
+  StyleSheet, KeyboardAvoidingView, Platform, Modal, Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
-import {
-  TENANT_OPTIONS,
-  PROPERTY_OPTIONS,
-  PAYMENT_INTERVAL_OPTIONS,
-} from '../../data';
+import { getTenants, getProperties, createContract, type ApiTenant, type ApiProperty } from '../../services/api';
+import { PAYMENT_INTERVAL_OPTIONS } from '../../data';
 
 // ─── Calendar helpers ────────────────────────────────────────────────────────
 
@@ -39,11 +36,20 @@ export default function CreateContractScreen() {
   const { t } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
-  // Dropdown fields
+  // API-loaded options
+  const [tenants, setTenants] = useState<ApiTenant[]>([]);
+  const [properties, setProperties] = useState<ApiProperty[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+
+  // Dropdown fields (display name)
   const [selectedTenant,   setSelectedTenant]   = useState('');
   const [selectedProperty, setSelectedProperty] = useState('');
   const [selectedInterval, setSelectedInterval] = useState('');
   const [openDropdown,     setOpenDropdown]     = useState<string | null>(null);
+
+  // Selected IDs for API submission
+  const [selectedTenantId,   setSelectedTenantId]   = useState('');
+  const [selectedPropertyId, setSelectedPropertyId] = useState('');
 
   // Text input fields
   const [rent,            setRent]            = useState('');
@@ -59,18 +65,37 @@ export default function CreateContractScreen() {
   const [calMonth,       setCalMonth]       = useState(today.getMonth());
   const [tempDate,       setTempDate]       = useState<Date | null>(null);
 
+  // Submit state
+  const [submitting, setSubmitting] = useState(false);
+
+  // Load tenants and properties on mount
+  useEffect(() => {
+    Promise.all([getTenants(), getProperties()])
+      .then(([t, p]) => { setTenants(t); setProperties(p); })
+      .catch(() => {})
+      .finally(() => setLoadingOptions(false));
+  }, []);
+
   // ── Dropdown helpers ──
   const dropdownOptions: Record<string, string[]> = {
-    tenant:   TENANT_OPTIONS.map(t => t.name),
-    property: PROPERTY_OPTIONS.map(p => p.name),
+    tenant:   tenants.map(t => t.fullName),
+    property: properties.map(p => p.name),
     interval: PAYMENT_INTERVAL_OPTIONS,
   };
   const dropdownValues: Record<string, string> = {
     tenant: selectedTenant, property: selectedProperty, interval: selectedInterval,
   };
   function handleSelect(value: string) {
-    if (openDropdown === 'tenant')   setSelectedTenant(value);
-    if (openDropdown === 'property') setSelectedProperty(value);
+    if (openDropdown === 'tenant') {
+      const found = tenants.find(t => t.fullName === value);
+      if (found) setSelectedTenantId(found._id);
+      setSelectedTenant(value);
+    }
+    if (openDropdown === 'property') {
+      const found = properties.find(p => p.name === value);
+      if (found) setSelectedPropertyId(found._id);
+      setSelectedProperty(value);
+    }
     if (openDropdown === 'interval') setSelectedInterval(value);
     setOpenDropdown(null);
   }
@@ -108,8 +133,35 @@ export default function CreateContractScreen() {
     ...Array(startDay).fill(null),
     ...Array.from({ length: totalDays }, (_, i) => i + 1),
   ];
-  // Pad to full rows
   while (calCells.length % 7 !== 0) calCells.push(null);
+
+  // ── Submit ──
+  async function handleSubmit() {
+    if (!selectedTenantId || !selectedPropertyId || !rent || !selectedInterval || !startDate || !endDate) {
+      Alert.alert('Validation', 'Please fill in all required fields.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createContract({
+        tenantId: selectedTenantId,
+        propertyId: selectedPropertyId,
+        rent: Number(rent),
+        paymentInterval: selectedInterval,
+        securityDeposit: securityDeposit ? Number(securityDeposit) : undefined,
+        annualIncrease: annualIncrease ? Number(annualIncrease) : undefined,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      });
+      Alert.alert('Success', 'Contract created successfully.', [
+        { text: 'OK', onPress: () => navigation.navigate('ContractsList' as never) },
+      ]);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create contract');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -128,9 +180,10 @@ export default function CreateContractScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>{t('createContract.tenantLabel')}</Text>
             <TouchableOpacity style={styles.dropdownTrigger} activeOpacity={0.7}
-              onPress={() => setOpenDropdown('tenant')}>
+              onPress={() => !loadingOptions && setOpenDropdown('tenant')}
+              disabled={loadingOptions}>
               <Text style={[styles.dropdownValue, !selectedTenant && styles.dropdownPlaceholder]}>
-                {selectedTenant || t('createContract.tenantPlaceholder')}
+                {loadingOptions ? 'Loading...' : (selectedTenant || t('createContract.tenantPlaceholder'))}
               </Text>
               <Text style={styles.dropdownChevron}>▾</Text>
             </TouchableOpacity>
@@ -140,9 +193,10 @@ export default function CreateContractScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>{t('createContract.propertyLabel')}</Text>
             <TouchableOpacity style={styles.dropdownTrigger} activeOpacity={0.7}
-              onPress={() => setOpenDropdown('property')}>
+              onPress={() => !loadingOptions && setOpenDropdown('property')}
+              disabled={loadingOptions}>
               <Text style={[styles.dropdownValue, !selectedProperty && styles.dropdownPlaceholder]}>
-                {selectedProperty || t('createContract.propertyPlaceholder')}
+                {loadingOptions ? 'Loading...' : (selectedProperty || t('createContract.propertyPlaceholder'))}
               </Text>
               <Text style={styles.dropdownChevron}>▾</Text>
             </TouchableOpacity>
@@ -208,8 +262,16 @@ export default function CreateContractScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.submitButton} activeOpacity={0.9}>
-            <Text style={styles.submitButtonText}>{t('createContract.submit')}</Text>
+          <TouchableOpacity
+            style={[styles.submitButton, (submitting || loadingOptions) && { opacity: 0.7 }]}
+            activeOpacity={0.9}
+            disabled={submitting || loadingOptions}
+            onPress={handleSubmit}
+          >
+            {submitting
+              ? <ActivityIndicator color={Colors.onPrimary} />
+              : <Text style={styles.submitButtonText}>{t('createContract.submit')}</Text>
+            }
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -219,20 +281,22 @@ export default function CreateContractScreen() {
         onRequestClose={() => setOpenDropdown(null)}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1}
           onPress={() => setOpenDropdown(null)}>
-          <TouchableOpacity style={styles.pickerCard} activeOpacity={1} onPress={() => {}}>
-            {currentOptions.map((option, index) => (
-              <React.Fragment key={option}>
-                {index > 0 && <View style={styles.pickerDivider} />}
-                <TouchableOpacity style={styles.pickerOption} activeOpacity={0.7}
-                  onPress={() => handleSelect(option)}>
-                  <Text style={[styles.pickerOptionText, currentValue === option && styles.pickerOptionSelected]}>
-                    {option}
-                  </Text>
-                  {currentValue === option && <Text style={styles.pickerCheckmark}>✓</Text>}
-                </TouchableOpacity>
-              </React.Fragment>
-            ))}
-          </TouchableOpacity>
+          <View style={styles.pickerCard}>
+            <ScrollView style={{ maxHeight: 300 }} bounces={false} showsVerticalScrollIndicator={true}>
+              {currentOptions.map((option, index) => (
+                <React.Fragment key={option}>
+                  {index > 0 && <View style={styles.pickerDivider} />}
+                  <TouchableOpacity style={styles.pickerOption} activeOpacity={0.7}
+                    onPress={() => handleSelect(option)}>
+                    <Text style={[styles.pickerOptionText, currentValue === option && styles.pickerOptionSelected]}>
+                      {option}
+                    </Text>
+                    {currentValue === option && <Text style={styles.pickerCheckmark}>✓</Text>}
+                  </TouchableOpacity>
+                </React.Fragment>
+              ))}
+            </ScrollView>
+          </View>
         </TouchableOpacity>
       </Modal>
 

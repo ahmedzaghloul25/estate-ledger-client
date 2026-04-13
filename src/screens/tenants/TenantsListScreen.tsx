@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,6 +18,12 @@ export default function TenantsListScreen() {
 
   const [tenants, setTenants] = useState<ApiTenant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const filteredTenants = useMemo(
+    () => tenants.filter(t => t.fullName.toLowerCase().includes(search.toLowerCase())),
+    [tenants, search]
+  );
 
   const loadTenants = useCallback(() => {
     setLoading(true);
@@ -73,21 +79,32 @@ export default function TenantsListScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchBar}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search tenants..."
+          placeholderTextColor={Colors.outlineVariant}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+
       {loading ? (
         <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
-          data={tenants}
+          data={filteredTenants}
           keyExtractor={(tenant) => tenant._id}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           renderItem={({ item: tenant }) => {
             const status = tenant.paymentStatus ? statusConfig[tenant.paymentStatus] : undefined;
-            const initials = tenant.fullName.split(' ').map((n) => n[0]).join('');
             return (
               <TouchableOpacity style={styles.card} activeOpacity={0.7} onLongPress={() => handleLongPress(tenant._id)}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initials}</Text>
+                  <Text style={styles.avatarText}>👤</Text>
                 </View>
                 <View style={styles.info}>
                   <View style={styles.nameRow}>
@@ -138,6 +155,15 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     },
     title: { ...Typography.headlineMd, fontFamily: FontFamily.manropeExtraBold, color: C.primary },
     subtitle: { ...Typography.bodyMd, color: C.onSurfaceVariant, marginTop: 4 },
+    searchContainer: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
+    searchBar: {
+      backgroundColor: C.surfaceContainerLow,
+      borderRadius: BorderRadius.xl,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 12,
+      ...Typography.bodyMd,
+      color: C.onSurface,
+    },
     content: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xxl, gap: Spacing.md },
     card: {
       backgroundColor: C.surfaceContainerLowest,
@@ -156,7 +182,7 @@ function makeStyles(C: ReturnType<typeof useColors>) {
       justifyContent: 'center',
       flexShrink: 0,
     },
-    avatarText: { ...Typography.titleSm, fontFamily: FontFamily.manropeBold, color: C.primary },
+    avatarText: { fontSize: 24 },
     info: { flex: 1, gap: 4 },
     nameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     name: { ...Typography.titleSm, fontFamily: FontFamily.manropeBold, color: C.onSurface },

@@ -1,27 +1,47 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PropertiesStackParamList } from '../../navigation';
 import { Typography, Spacing, BorderRadius, FontFamily, useColors } from '../../theme';
 import { useAppContext } from '../../context/AppContext';
+import { getPropertyById, type ApiProperty } from '../../services/api';
 
 export default function PropertyDetailScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<PropertiesStackParamList>>();
+  const route = useRoute<RouteProp<PropertiesStackParamList, 'PropertyDetail'>>();
+  const { propertyId } = route.params;
   const Colors = useColors();
   const { t } = useAppContext();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
+
+  const [property, setProperty] = useState<ApiProperty | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getPropertyById(propertyId)
+      .then(setProperty)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [propertyId]);
 
   function handleBack() {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      // Arrived here from outside the Properties stack (e.g. Dashboard).
-      // Navigate to the list so the back chain is always Properties-scoped.
       navigation.navigate('PropertiesList');
     }
   }
+
+  const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
+    rented: { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer, label: t('properties.rented') },
+    available: { bg: Colors.primaryFixed, text: Colors.primary, label: t('properties.available') },
+    overdue: { bg: Colors.errorContainer, text: Colors.onErrorContainer, label: t('properties.overdue') },
+  };
+
+  const status = property ? (statusConfig[property.status] ?? statusConfig['available']) : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -32,44 +52,51 @@ export default function PropertyDetailScreen() {
         <Text style={styles.headerTitle}>{t('propertyDetail.headerTitle')}</Text>
         <View style={{ width: 40 }} />
       </View>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.imagePlaceholder}>
-          <Text style={{ fontSize: 48 }}>🏠</Text>
-        </View>
-        <View style={styles.body}>
-          <View style={styles.row}>
-            <Text style={styles.title}>The Meridian Penthouse</Text>
-            <View style={[styles.badge, { backgroundColor: Colors.secondaryContainer }]}>
-              <Text style={[styles.badgeText, { color: Colors.onSecondaryContainer }]}>{t('properties.rented')}</Text>
-            </View>
-          </View>
-          <Text style={styles.address}>12 Skyline Ave, Floor 32</Text>
 
-          <View style={styles.statsRow}>
-            {[
-              { label: t('propertyDetail.rent'), value: '4,200' },
-              { label: t('propertyDetail.area'), value: '160 m' },
-            ].map((stat) => (
-              <View key={stat.label} style={styles.statCard}>
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statLabel}>{stat.label}</Text>
+      {loading ? (
+        <ActivityIndicator style={{ flex: 1, marginTop: 60 }} size="large" color={Colors.primary} />
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.imagePlaceholder}>
+            <Text style={{ fontSize: 48 }}>🏠</Text>
+          </View>
+          <View style={styles.body}>
+            <View style={styles.row}>
+              <Text style={styles.title}>{property?.name ?? '—'}</Text>
+              {status && (
+                <View style={[styles.badge, { backgroundColor: status.bg }]}>
+                  <Text style={[styles.badgeText, { color: status.text }]}>{status.label}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.address}>{property?.address ?? '—'}</Text>
+
+            {property?.area !== undefined && (
+              <View style={styles.statsRow}>
+                <View style={styles.statCard}>
+                  <Text style={styles.statValue}>{property.area}</Text>
+                  <Text style={styles.statLabel}>{t('propertyDetail.area')}</Text>
+                </View>
               </View>
-            ))}
-          </View>
+            )}
 
-          <Text style={styles.sectionTitle}>{t('propertyDetail.sectionTenant')}</Text>
-          <View style={styles.tenantCard}>
-            <View style={styles.tenantAvatar}>
-              <Text style={{ fontSize: 24 }}>👤</Text>
-            </View>
-            <View>
-              <Text style={styles.tenantName}>Julianne Sterling</Text>
-              <Text style={styles.tenantContact}>julianne@example.com</Text>
-              <Text style={styles.tenantLease}>Lease: Jan 2026 – Dec 2026</Text>
-            </View>
+            {property?.currentTenant && (
+              <>
+                <Text style={styles.sectionTitle}>{t('propertyDetail.sectionTenant')}</Text>
+                <View style={styles.tenantCard}>
+                  <View style={styles.tenantAvatar}>
+                    <Text style={{ fontSize: 24 }}>👤</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.tenantName}>{property.currentTenant.fullName}</Text>
+                    <Text style={styles.tenantContact}>{property.currentTenant.email}</Text>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -134,6 +161,5 @@ function makeStyles(C: ReturnType<typeof useColors>) {
     },
     tenantName: { ...Typography.titleSm, fontFamily: FontFamily.manropeBold, color: C.onSurface },
     tenantContact: { ...Typography.bodyMd, color: C.onSurfaceVariant },
-    tenantLease: { ...Typography.bodySm, color: C.secondary, fontFamily: FontFamily.interSemiBold, marginTop: 2 },
   });
 }
