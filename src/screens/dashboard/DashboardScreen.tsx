@@ -21,12 +21,14 @@ import { useAppContext } from '../../context/AppContext';
 import {
   getReportSummary,
   getReportBreakdown,
+  getReportMonthly,
   getProperties,
   getPayments,
   getContracts,
   collectPayment,
   type ApiSummary,
   type ApiBreakdown,
+  type ApiMonthlyPoint,
 } from '../../services/api';
 
 type DashboardNavProp = CompositeNavigationProp<
@@ -68,6 +70,7 @@ export default function DashboardScreen() {
 
   const [summaryData, setSummaryData] = useState<ApiSummary | null>(null);
   const [breakdown, setBreakdown] = useState<ApiBreakdown | null>(null);
+  const [monthlyData, setMonthlyData] = useState<ApiMonthlyPoint[]>([]);
   const [propertiesCount, setPropertiesCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
   const [activeRentals, setActiveRentals] = useState<ActiveRentalItem[]>([]);
@@ -80,7 +83,7 @@ export default function DashboardScreen() {
     setLoading(true);
     const year = new Date().getFullYear();
     try {
-      const [summary, props, overduePayments, activeContracts, expiringContracts, upcomingPayments, bkd] =
+      const [summary, props, overduePayments, activeContracts, expiringContracts, upcomingPayments, bkd, mth] =
         await Promise.all([
           getReportSummary(year),
           getProperties(),
@@ -89,9 +92,11 @@ export default function DashboardScreen() {
           getContracts('expiring'),
           getPayments({ status: 'upcoming' }),
           getReportBreakdown(),
+          getReportMonthly(5),
         ]);
       setSummaryData(summary);
       setBreakdown(bkd);
+      setMonthlyData(Array.isArray(mth) ? mth : mth?.data ?? []);
       setPropertiesCount(props.length);
       setOverdueCount(overduePayments.length);
       const allActiveContracts = [...activeContracts, ...expiringContracts];
@@ -104,7 +109,9 @@ export default function DashboardScreen() {
           propertyId: c.propertyId._id,
           name: c.propertyId.name,
           tenant: c.tenantId.fullName,
-          rent: `EGP ${c.rent.toLocaleString()}`,
+          rent: relevantPayment
+            ? `EGP ${relevantPayment.amount.toLocaleString()}`
+            : `EGP ${c.rent.toLocaleString()}`,
           contractEndISO: c.endDate,
           contractEnd: formatDashboardDate(new Date(c.endDate)),
           dueDate: relevantPayment
@@ -208,13 +215,17 @@ export default function DashboardScreen() {
                   </View>
                 </View>
               </View>
-              {/* Mini sparkline */}
+              {/* Mini sparkline — real monthly collections */}
               <View style={styles.sparkline}>
-                <View style={[styles.sparkBar, { height: 20 }]} />
-                <View style={[styles.sparkBar, { height: 32 }]} />
-                <View style={[styles.sparkBar, { height: 16 }]} />
-                <View style={[styles.sparkBar, { height: 40 }]} />
-                <View style={[styles.sparkBar, { height: 28 }]} />
+                {(() => {
+                  const maxVal = Math.max(...monthlyData.map(m => m.amount), 1);
+                  return monthlyData.map((m, i) => (
+                    <View
+                      key={i}
+                      style={[styles.sparkBar, { height: Math.max(4, (m.amount / maxVal) * 40) }]}
+                    />
+                  ));
+                })()}
               </View>
             </View>
           </View>

@@ -37,7 +37,7 @@ export default function ReportsScreen() {
           setMonthly(Array.isArray(m) ? m : m?.data ?? []);
           setBreakdown(b);
         })
-        .catch(() => {})
+        .catch((e) => { console.error('[Reports] load failed:', e); })
         .finally(() => setLoading(false));
     }, [])
   );
